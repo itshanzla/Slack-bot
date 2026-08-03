@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Slack Check-in Bot Dashboard</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 600px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 30px;
+    }
+    h2 {
+      color: #555;
+      font-size: 1.1rem;
+      margin-top: 30px;
+      margin-bottom: 15px;
+    }
+    .card {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .input-row {
+      display: flex;
+      gap: 10px;
+    }
+    input[type="text"], textarea {
+      flex: 1;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    input[type="text"]:focus, textarea:focus {
+      outline: none;
+      border-color: #4A154B;
+    }
+    textarea {
+      width: 100%;
+      min-height: 80px;
+      resize: vertical;
+      margin-bottom: 10px;
+    }
+    button {
+      padding: 10px 20px;
+      background: #4A154B;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    button:hover {
+      background: #611f69;
+    }
+    .keywords-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      min-height: 40px;
+    }
+    .keyword-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #e8e8e8;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 14px;
+    }
+    .keyword-chip .remove {
+      cursor: pointer;
+      color: #666;
+      font-weight: bold;
+      font-size: 16px;
+      line-height: 1;
+    }
+    .keyword-chip .remove:hover {
+      color: #c00;
+    }
+    .empty-state {
+      color: #999;
+      font-style: italic;
+    }
+    .status {
+      margin-top: 10px;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      display: none;
+    }
+    .status.success {
+      display: block;
+      background: #d4edda;
+      color: #155724;
+    }
+    .status.error {
+      display: block;
+      background: #f8d7da;
+      color: #721c24;
+    }
+  </style>
+</head>
+<body>
+  <h1>Slack Check-in Bot</h1>
+
+  <div class="card">
+    <h2>Keywords</h2>
+    <p style="color: #666; font-size: 13px; margin-bottom: 15px;">
+      The bot replies when any of these keywords appear in a message.
+    </p>
+    <div class="input-row">
+      <input type="text" id="keywordInput" placeholder="Enter a keyword...">
+      <button onclick="addKeyword()">Add</button>
+    </div>
+    <div id="keywordStatus" class="status"></div>
+    <h2>Active Keywords</h2>
+    <div id="keywordsContainer" class="keywords-container">
+      <span class="empty-state">No keywords configured</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Check-in Message</h2>
+    <p style="color: #666; font-size: 13px; margin-bottom: 15px;">
+      This message is sent when a keyword is detected.
+    </p>
+    <textarea id="checkinMessage" placeholder="Enter the check-in reply message..."></textarea>
+    <button onclick="saveMessage()">Save Message</button>
+    <div id="messageStatus" class="status"></div>
+  </div>
+
+  <script>
+    async function loadConfig() {
+      try {
+        const res = await fetch('/api/config');
+        const config = await res.json();
+        renderKeywords(config.keywords);
+        document.getElementById('checkinMessage').value = config.checkinMessage;
+      } catch (err) {
+        console.error('Failed to load config:', err);
+      }
+    }
+
+    function renderKeywords(keywords) {
+      const container = document.getElementById('keywordsContainer');
+      if (!keywords.length) {
+        container.innerHTML = '<span class="empty-state">No keywords configured</span>';
+        return;
+      }
+      container.innerHTML = keywords.map(kw => `
+        <span class="keyword-chip">
+          ${escapeHtml(kw)}
+          <span class="remove" onclick="removeKeyword('${escapeHtml(kw)}')">&times;</span>
+        </span>
+      `).join('');
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function showStatus(elementId, message, isError) {
+      const el = document.getElementById(elementId);
+      el.textContent = message;
+      el.className = 'status ' + (isError ? 'error' : 'success');
+      setTimeout(() => { el.className = 'status'; }, 3000);
+    }
+
+    async function addKeyword() {
+      const input = document.getElementById('keywordInput');
+      const keyword = input.value.trim();
+      if (!keyword) return;
+
+      try {
+        const res = await fetch('/api/keywords', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keyword })
+        });
+        const config = await res.json();
+        if (res.ok) {
+          renderKeywords(config.keywords);
+          input.value = '';
+          showStatus('keywordStatus', 'Keyword added!', false);
+        } else {
+          showStatus('keywordStatus', config.error || 'Failed to add keyword', true);
+        }
+      } catch (err) {
+        showStatus('keywordStatus', 'Failed to add keyword', true);
+      }
+    }
+
+    async function removeKeyword(keyword) {
+      try {
+        const res = await fetch('/api/keywords/' + encodeURIComponent(keyword), {
+          method: 'DELETE'
+        });
+        const config = await res.json();
+        renderKeywords(config.keywords);
+        showStatus('keywordStatus', 'Keyword removed!', false);
+      } catch (err) {
+        showStatus('keywordStatus', 'Failed to remove keyword', true);
+      }
+    }
+
+    async function saveMessage() {
+      const message = document.getElementById('checkinMessage').value;
+      if (!message) {
+        showStatus('messageStatus', 'Message cannot be empty', true);
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/checkin-message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+        if (res.ok) {
+          showStatus('messageStatus', 'Message saved!', false);
+        } else {
+          const data = await res.json();
+          showStatus('messageStatus', data.error || 'Failed to save', true);
+        }
+      } catch (err) {
+        showStatus('messageStatus', 'Failed to save message', true);
+      }
+    }
+
+    // Add keyword on Enter key
+    document.getElementById('keywordInput').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') addKeyword();
+    });
+
+    // Load config on page load
+    loadConfig();
+  </script>
+</body>
+</html>

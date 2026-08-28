@@ -4,7 +4,7 @@
   "description": "Slack bot that auto-replies when keywords are detected",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node init && node src/index.js"
   },
   "dependencies": {
     "@slack/socket-mode": "^2.0.0",
